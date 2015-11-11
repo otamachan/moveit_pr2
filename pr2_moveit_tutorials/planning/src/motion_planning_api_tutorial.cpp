@@ -34,6 +34,9 @@
 
 /* Author: Sachin Chitta */
 
+//##include <boost/pointer_cast.hpp>
+#include <boost/smart_ptr/shared_ptr.hpp>
+
 #include <pluginlib/class_loader.h>
 #include <ros/ros.h>
 
@@ -44,6 +47,9 @@
 #include <moveit/kinematic_constraints/utils.h>
 #include <moveit_msgs/DisplayTrajectory.h>
 #include <moveit_msgs/PlanningScene.h>
+
+
+#include <moveit/ompl_interface/model_based_planning_context.h>
 
 int main(int argc, char **argv)
 {
@@ -114,7 +120,7 @@ int main(int argc, char **argv)
 
   /* Sleep a little to allow time to startup rviz, etc. */
   ros::WallDuration sleep_time(15.0);
-  sleep_time.sleep();
+  //sleep_time.sleep();
 
   // Pose Goal
   // ^^^^^^^^^
@@ -147,7 +153,16 @@ int main(int argc, char **argv)
   // We now construct a planning context that encapsulate the scene,
   // the request and the response. We call the planner using this 
   // planning context
+  req.planner_id = "RRTkConfigDefault";
+  ROS_ERROR(req.planner_id.c_str());
   planning_interface::PlanningContextPtr context = planner_instance->getPlanningContext(planning_scene, req, res.error_code_);
+  context.reset();
+  //ompl_interface::ModelBasedPlanningContextPtr c2;
+  //c2 = boost::dynamic_pointer_cast<ompl_interface::ModelBasedPlanningContext>(context);
+  //ompl::geometric::SimpleSetupPtr ss = c2->getOMPLSimpleSetup();
+  ROS_INFO("yahoo");
+  //assert(ss);
+  return 0;
   context->solve(res);
   if(res.error_code_.val != res.error_code_.SUCCESS)
   {
