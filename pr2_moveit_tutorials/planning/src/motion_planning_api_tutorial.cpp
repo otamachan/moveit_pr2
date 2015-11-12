@@ -50,6 +50,11 @@
 
 
 #include <moveit/ompl_interface/model_based_planning_context.h>
+#include <moveit/ompl_interface/ompl_interface.h>
+
+#include <ompl/util/Console.h>
+
+ompl::msg::OutputHandlerSTD handler;
 
 int main(int argc, char **argv)
 {
@@ -75,7 +80,6 @@ int main(int argc, char **argv)
   // .. _RobotModelLoader: http://docs.ros.org/api/moveit_ros_planning/html/classrobot__model__loader_1_1RobotModelLoader.html
   robot_model_loader::RobotModelLoader robot_model_loader("robot_description");
   robot_model::RobotModelPtr robot_model = robot_model_loader.getModel();
-
   
   // Using the :moveit_core:`RobotModel`, we can construct a
   // :planning_scene:`PlanningScene` that maintains the state of 
@@ -117,6 +121,10 @@ int main(int argc, char **argv)
     ROS_ERROR_STREAM("Exception while loading planner '" << planner_plugin_name << "': " << ex.what() << std::endl
                      << "Available plugins: " << ss.str());
   }
+  ros::NodeHandle nh_(node_handle.getNamespace());
+  boost::scoped_ptr<ompl_interface::OMPLInterface> ompl_interface_(new ompl_interface::OMPLInterface(robot_model, nh_));
+
+  
 
   /* Sleep a little to allow time to startup rviz, etc. */
   ros::WallDuration sleep_time(15.0);
@@ -153,22 +161,38 @@ int main(int argc, char **argv)
   // We now construct a planning context that encapsulate the scene,
   // the request and the response. We call the planner using this 
   // planning context
+
+  ompl::msg::useOutputHandler(&handler);
+  ompl::msg::setLogLevel(ompl::msg::LOG_DEBUG);
+
   req.planner_id = "RRTkConfigDefault";
   ROS_ERROR(req.planner_id.c_str());
+  robot_state::RobotState& robot_state_hoge = planning_scene->getCurrentStateNonConst();
+  robot_state_hoge.printStateInfo();
+  
+  robot_state_hoge.printStatePositions();
+  //  ompl_interface::OMPLPlannerManagerPtr ompl_instance = boost::dynamic_pointer_cast<ompl_interface::OMPLPlannerManager>(planner_instance);
+  ompl_interface::PlanningContextManager& context_manager_ = ompl_interface_->getPlanningContextManager();
+  ompl_interface::ModelBasedPlanningContextPtr ctx = context_manager_.getPlanningContext(planning_scene, req, res.error_code_);
   planning_interface::PlanningContextPtr context = planner_instance->getPlanningContext(planning_scene, req, res.error_code_);
-  context.reset();
-  //ompl_interface::ModelBasedPlanningContextPtr c2;
-  //c2 = boost::dynamic_pointer_cast<ompl_interface::ModelBasedPlanningContext>(context);
-  //ompl::geometric::SimpleSetupPtr ss = c2->getOMPLSimpleSetup();
+  //planning_interface::PlanningContextPtr context = ompl_interface_->getPlanningContext(planning_scene, req, res.error_code_);
+  std::cerr << res.error_code_ << std::endl;
+  assert(context);
+  ompl_interface::ModelBasedPlanningContextPtr c2;
+  c2 = boost::dynamic_pointer_cast<ompl_interface::ModelBasedPlanningContext>(context);
+  c2->setVerboseStateValidityChecks(true);
+  ompl::geometric::SimpleSetupPtr ss = c2->getOMPLSimpleSetup();
   ROS_INFO("yahoo");
-  //assert(ss);
-  return 0;
+  ROS_INFO(ss->getPlanner()->getName().c_str());
+  ss->getProblemDefinition()->print();
+  //ss->setOptimizationObjective();
   context->solve(res);
   if(res.error_code_.val != res.error_code_.SUCCESS)
   {
     ROS_ERROR("Could not compute plan successfully");
     return 0;
   }
+  return 0;
 
   // Visualize the result
   // ^^^^^^^^^^^^^^^^^^^^
