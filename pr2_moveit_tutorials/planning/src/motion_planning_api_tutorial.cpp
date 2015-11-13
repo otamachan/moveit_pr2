@@ -48,15 +48,45 @@
 #include <moveit_msgs/DisplayTrajectory.h>
 #include <moveit_msgs/PlanningScene.h>
 
-
 #include <moveit/ompl_interface/model_based_planning_context.h>
 #include <moveit/ompl_interface/ompl_interface.h>
+#include <moveit/ompl_interface/detail/constrained_goal_sampler.h>
 
 #include <ompl/util/Console.h>
 
 #include <ros/console.h>
 
+namespace ompl_interface
+{
+
+  class ModelBasedPlanningContext;
+  class SimpleGoalSampler : public ompl::base::GoalLazySamples
+  {
+  public:
+    SimpleGoalSampler(const ModelBasedPlanningContext *pc, robot_state::RobotState& state)
+      : ompl::base::GoalLazySamples(pc->getOMPLSimpleSetup()->getSpaceInformation(),
+                                    boost::bind(&SimpleGoalSampler::sampler, this, _1, _2), false)
+      , planning_context_(pc)
+      , state_(state)
+    {
+    }
+  private:
+    bool sampler(const ompl::base::GoalLazySamples *gls, ompl::base::State *new_goal) {
+      if (gls->hasStates()) {
+        return false;
+      }
+      planning_context_->getOMPLStateSpace()->copyToOMPLState(new_goal, state_);
+      return true;
+    }
+    const ModelBasedPlanningContext *planning_context_;
+    robot_state::RobotState&   state_;
+  };
+}
+
+
+
 ompl::msg::OutputHandlerSTD handler;
+
 
 int main(int argc, char **argv)
 {
@@ -77,29 +107,47 @@ int main(int argc, char **argv)
 
   planning_interface::MotionPlanRequest req;
   planning_interface::MotionPlanResponse res;
+
+
+  robot_state::RobotState& robot_state = planning_scene->getCurrentStateNonConst();
+  const robot_state::JointModelGroup* joint_model_group = robot_state.getJointModelGroup("right_arm");
+  //robot_state::RobotState goal_state(robot_model);
+  moveit_msgs::Constraints joint_goal = kinematic_constraints::constructGoalConstraints(robot_state, joint_model_group);
+  req.goal_constraints.clear();
+  req.goal_constraints.push_back(joint_goal);
+#if 0
   geometry_msgs::PoseStamped pose;
   pose.header.frame_id = "torso_lift_link";
   pose.pose.position.x = 0.75;
   pose.pose.position.y = 0.0;
   pose.pose.position.z = 0.0;
   pose.pose.orientation.w = 1.0;
-
-  // A tolerance of 0.01 m is specified in position
-  // and 0.01 radians in orientation
   std::vector<double> tolerance_pose(3, 0.01);
   std::vector<double> tolerance_angle(3, 0.01);
-
   moveit_msgs::Constraints pose_goal = kinematic_constraints::constructGoalConstraints("r_wrist_roll_link", pose, tolerance_pose, tolerance_angle);
   req.goal_constraints.push_back(pose_goal);
+#endif
 
   req.group_name = "right_arm";
   req.planner_id = "RRTkConfigDefault";
+
   ompl_interface::PlanningContextManager& context_manager_ = ompl_interface_->getPlanningContextManager();
   ompl_interface::ModelBasedPlanningContextPtr ctx = context_manager_.getPlanningContext(planning_scene, req, res.error_code_);
   ompl::geometric::SimpleSetupPtr ss = ctx->getOMPLSimpleSetup();
-  //ROS_INFO(ss->getPlanner()->getName().c_str());
-  ss->getProblemDefinition()->print();
-  //ss->setOptimizationObjective();
+
+  ompl::base::GoalPtr goal = ctx->getOMPLSimpleSetup()->getGoal();
+  ompl_interface::SimpleGoalSampler simple(ctx.get(), robot_state);
+  ctx->getOMPLSimpleSetup()->setGoal(ompl::base::GoalPtr(static_cast<ompl::base::Goal*>(&simple)));
+
+  std::vector<std::string> link_names;
+  std::
+  link_names.push_back(joint_model_group->getSolverInstance()->getTipFrame());
+
+  ROS_ERROR(joint_model_group->getEndEffectorName().c_str());
+  joint_model_group->printGroupInfo();
+  ss->getSpaceInformation()->printSettings();
+  ss->getSpaceInformation()->printProperties();
+
   ctx->solve(res);
 
   if(res.error_code_.val != res.error_code_.SUCCESS)
@@ -107,5 +155,7 @@ int main(int argc, char **argv)
     ROS_ERROR("Could not compute plan successfully");
     return 0;
   }
+  //ss->getProblemDefinition()->print();
   return 0;
 }
+
